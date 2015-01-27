@@ -1,7 +1,15 @@
 var current_level = 0;
 var playAsGuy = true;
+var sound = true;
+var level_steps = 0;
 
 jQuery(function($){
+  
+  var level_cookie = $.cookie('current_level');
+  if(level_cookie) {
+    current_level = parseInt(level_cookie);
+    $(".level-count").html(current_level + 1);
+  }
   
   $("#play-button").click(function(){
     $("#field").fadeOut(function(){
@@ -9,13 +17,18 @@ jQuery(function($){
     });
   });
   
-/*
-  $(document).on('mouseover', '#char-select div.hero', function(){
-    $(this).animate({opacity: 0.8});
-  }, function(){
-    $(this).animate({opacity: 0.4});
+  $("#toggleSound").click(function(){
+    if(sound) {
+      sound = false;
+      window.play_music(null);
+      $(this).find(".fa").removeClass("fa-volume-up").addClass("fa-volume-off");
+    } else {
+      sound = true;
+      window.play_music("intro");
+      $(this).find(".fa").removeClass("fa-volume-off").addClass("fa-volume-up");
+    }
   });
-*/
+  
   
   $('#char-select div.hero').on({
     click: function() {
@@ -42,17 +55,19 @@ jQuery(function($){
   $(document).on('click','#new-level', function() {
     $("#field").fadeOut(function(){
       if(current_level + 1 > levels.length) current_level = 0
-      $("#field").new_level(current_level);
+      $("#field").new_level(++current_level);
     });
   });
   
   $(document).on('click','#next-level', function() {
     $("#field").fadeOut(function(){
-      if(current_level + 1 < levels.length) {
-        createField(levels[++current_level], playAsGuy);
-      } else {
-        current_level = 0
+      if(current_level < levels.length) {
         createField(levels[current_level], playAsGuy);
+      } else {
+        
+        current_level = 0;
+        $.removeCookie('current_level');
+        
       }
     });
   });
@@ -61,8 +76,26 @@ jQuery(function($){
 
 $.fn.level_complete = function() {
   jQuery(function($){
+    $("#gamehint").fadeOut();
     $("#retry").fadeOut().remove();
-    var html = '<div id="start-screen"><div class="darken"><h4>What do we do next?</h4><a href="#" onclick="return false;" title="Replay" id="restart-level" class="restart button button-error">Replay Level</a><a href="#" onclick="return false;" title="Play" id="new-level" class="button button-success">Next Level?</a></div></div>';
+    
+    if(current_level + 1 == levels.length) {
+        current_level = 0;
+        $.cookie('current_level', 0, { expires: 365, path: '/' });
+        var html = '<div id="start-screen" class="game-over"><div class="darken"><h1 class="logo">Game Over</h1><div id="char-select"><div class="hero soldier active" style="width: 64px; height: 64px; float: left; position: static; background-position: -512px -128px;"></div><div class="hero princess" style="width: 64px; height: 64px; float: left; position: static; background-position: -512px -128px;"></div></div><div class="clearfix"></div></div>';
+        $("#field").delay(500).fadeOut(function(){
+          $("#field").width("100%").height("100%").html(html).css({
+            'position' : 'absolute',
+            'left' : '50%',
+            'top' : '50%',
+            'margin-left' : -$(this).width()/2,
+            'margin-top' : -$(this).height()/2
+          }).fadeIn();
+        });
+        return false;
+    }
+    
+    var html = '<div id="start-screen"><div class="darken"><h4>What do we do next?</h4><a href="#" onclick="return false;" title="Replay" id="restart-level" class="restart button button-error">Replay Level</a><a href="#" onclick="return false;" title="Play" id="new-level" class="button button-success">Next Level</a><h5>You did it in ' + level_steps + ' steps.</h5></div></div>';
     $("#field").delay(500).fadeOut(function(){
       $("#field").width("100%").height("100%").html(html).css({
         'position' : 'absolute',
@@ -72,6 +105,10 @@ $.fn.level_complete = function() {
         'margin-top' : -$(this).height()/2
       }).fadeIn();
     });
+    
+    // use cookies to save progress
+    $.cookie('current_level', current_level + 1, { expires: 365, path: '/' });
+    
   });
 }
 
@@ -86,37 +123,58 @@ $.fn.new_level = function(level) {
         'margin-left' : -$(this).width()/2,
         'margin-top' : -$(this).height()/2
       }).fadeIn(function(){
-        $('<a href="#" onclick="return false;" title="Play" id="next-level" class="button button-primary">Play</a>').hide().appendTo("#start-screen .darken").fadeIn();
+        setTimeout(function(){
+          $('<a href="#" onclick="return false;" title="Play" id="next-level" class="button button-primary">Play</a>').hide().appendTo("#start-screen .darken").trigger('click');
+        }, 500);
       });
     });
   });
 }
 
 
-;(function(exports) {
-  
+
 window.audio = new Audio();
-audio.setAttribute("loop", "loop");
+var loop_audio = true;
+
+audio.addEventListener('ended', function() {
+    if(loop_audio){
+      this.currentTime = 0;
+      this.play();
+    }
+}, false);
 
 function play_music(sound) {
   
   mySound = "";
+  loop_audio = true;
   
   switch(sound) {
     case "intro": 
-      sound = "AboutScene.mp3";
+      sound = "Andante.mp3";
       break;
     case "gameplay":
-      sound = "Andante.mp3";
+      sound = "Development.mp3";
+      break;
+    case "success":
+      loop_audio = false;
+      sound = "Achievement.mp3";
+      break;
+    case null:
+      audio.pause();
+      return false;
       break;
   }
 
-  audio.setAttribute("src","audio/" + sound);
-
-  audio.load(); //call this to just preload the audio without playing
-  audio.play(); //call this to play the song right away
+  if(sound) {
+   audio.setAttribute("src","audio/" + sound);
+   audio.load(); //call this to just preload the audio without playing
+   audio.play(); //call this to play the song right away 
+  }
 }
-  
+
+
+
+;(function(exports) {  
   
 
 var field;
@@ -281,28 +339,40 @@ function Cell(x, y, type, div) {
 
 exports.init = function init() {
 	field = $("#field");
-	play_music("intro");
+	window.play_music("intro");
+	
+  var allowed_move = true;
+  
+  $(document).keyup(function(e) { 
+    allowed_move = true;
+  });
+  
+  $(document).focus(function(e) { 
+    allowed_move = true;
+  });
 
 	$(document).keydown(function(e) {
+  	if (!allowed_move) return false;
+  	allowed_move = false;
 		switch(e.which) {
-		case 38: // up
-		case 87: // W
-			move(0, -1);
-			break;
-		case 39: // right
-		case 68: // D
-			move(1, 0);
-			break;
-		case 37: // left
-		case 65: // A
-			move(-1, 0);
-			break;
-		case 40: // down
-		case 83: // S
-			move(0, 1);
-			break;
-		default:
-			return;
+  		case 38: // up
+  		case 87: // W
+  			move(0, -1);
+  			break;
+  		case 39: // right
+  		case 68: // D
+  			move(1, 0);
+  			break;
+  		case 37: // left
+  		case 65: // A
+  			move(-1, 0);
+  			break;
+  		case 40: // down
+  		case 83: // S
+  			move(0, 1);
+  			break;
+  		default:
+  			return;
 		}
 		e.preventDefault();
 	});
@@ -315,6 +385,9 @@ function move(dx, dy) {
 	var mainHeroCanMove = mainHero.canMove(dx, dy);
 	var secondHeroCanMove = secondHero.canMove(-dx, -dy);
 	if(mainHeroCanMove && secondHeroCanMove) {
+  	
+  	$(".level-steps").html(++level_steps);
+  	
 		// check final condition
 		if(mainHero.canGo(dx, dy) && secondHero.canGo(-dx, -dy)) {
 			var px = secondHero.x - mainHero.x;
@@ -341,7 +414,7 @@ function move(dx, dy) {
 				secondHero.div.css("zIndex", 2);
 
 				$("<div>").addClass("final").hide().appendTo(field).fadeIn(2000, function(){
-  				play_music("intro");
+  				window.play_music("success");
   				$("body").level_complete();
 				});
 
@@ -362,9 +435,15 @@ function move(dx, dy) {
 	}
 };
 
-exports.createField = function createField(scheme, playForGuy) {
+exports.createField = function createField(level, playForGuy) {
 	field.empty();
-	play_music("gameplay");
+	
+	window.play_music("gameplay");
+	$(".level-count").html(current_level + 1);
+  level_steps = 0;
+	$(".level-steps").html(level_steps);
+
+	var scheme = level.scheme;
 
 	fieldWidth = scheme[0].length;
 	fieldHeight = scheme.length;
@@ -449,15 +528,17 @@ exports.createField = function createField(scheme, playForGuy) {
 
 	for(var i = 0; i < heroes.length; ++i)
 		heroes[i].div.insertAfter(cells[heroes[i].y][heroes[i].x].div);
-		
+
+	$("#gamehint").text(level.text).fadeIn(300);
+
   field.fadeIn();
   
   $("#retry").fadeOut().remove();
   $('<a href="#" onclick="return false;" title="Replay Level" id="retry" class="restart button button-error button-small">Reset</a>').hide().appendTo('body').css({
     position: 'absolute',
-    top: '10px',
+    top: '40px',
     right: '10px'
-  }).delay(5000).fadeIn('slow');
+  }).delay(2000 * current_level).fadeIn('slow');
   
 }
 
